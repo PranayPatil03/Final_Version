@@ -1,0 +1,15 @@
+@using Microsoft.AspNetCore.Components
+<MudDialog Class="score-dialog">
+    <TitleContent><div class="dialog-blue-title">@EntityName | @IndustryName</div></TitleContent>
+    <DialogContent>
+        <div class="dialog-head"><b>Business Parameters</b><span>Weights (%)</span><span>Value</span><span>Score</span></div>
+        <div class="dialog-current"><span>@Parameter.ParameterName</span><span>@Parameter.Weight.ToString("0")%</span><span>@CurrentValue</span><span>@CurrentScore</span></div>
+        <div class="details-copy"><b>Parameter Name:</b> @Parameter.ParameterName</div>
+        <div class="details-copy"><b>Why It Matters?</b><div>@((MarkupString)Parameter.WhyItMatters)</div></div>
+        @if (!string.IsNullOrWhiteSpace(Parameter.HowDoWeMeasure)) { <div class="details-copy"><b>How do we measure it?</b><div>@((MarkupString)Parameter.HowDoWeMeasure)</div></div> }
+        <div class="scoring-title">Scoring Definition</div>
+        <div class="score-table-wrap"><table class="score-table"><thead><tr><th>Description</th><th colspan="5">Score</th></tr><tr><th></th>@foreach(var s in Parameter.Scores.OrderBy(x => x.Score)){<th>@s.Score</th>}</tr></thead><tbody><tr><td>Qualifying Criteria</td>@foreach(var s in Parameter.Scores.OrderBy(x => x.Score)){<td>@s.Definition</td>}</tr></tbody></table></div>
+    </DialogContent>
+    <DialogActions><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Close">Save & Close</MudButton></DialogActions>
+</MudDialog>
+@code { [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!; [Parameter] public ParameterDto Parameter { get; set; } = default!; [Parameter] public decimal CurrentValue { get; set; } [Parameter] public int CurrentScore { get; set; } [Parameter] public string EntityName { get; set; } = ""; [Parameter] public string IndustryName { get; set; } = ""; void Close() => MudDialog.Close(); }

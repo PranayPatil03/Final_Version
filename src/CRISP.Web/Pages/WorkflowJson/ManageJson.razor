@@ -1,0 +1,143 @@
+@page "/workflow-json"
+@page "/versions"
+@rendermode InteractiveServer
+@inject FrameworkApiClient Api
+@inject ISnackbar Snackbar
+
+<div class="admin-page">
+    <div class="crumb">Workflow JSON / Manage JSON</div>
+    <MudPaper Class="admin-card" Elevation="0">
+        <div class="admin-title-row">
+            <div>
+                <MudText Typo="Typo.h5">Workflow JSON Version Management</MudText>
+                <MudText Typo="Typo.body2" Class="muted">Parameters, score definitions and Rules Engine formulas are maintained in JSON.</MudText>
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="NewDraft">New Draft</MudButton>
+        </div>
+
+        <div class="admin-grid-3">
+            <MudSelect T="string" Value="WorkflowCode" ValueChanged="ChangeWorkflow" Label="Workflow" Variant="Variant.Outlined">
+                @foreach (var workflow in Workflows)
+                {
+                    <MudSelectItem Value="@workflow.WorkflowCode">@workflow.WorkflowName</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="VersionName" Label="Version Name" Variant="Variant.Outlined" />
+            <MudSelect T="string" @bind-Value="Status" Label="Save Status" Variant="Variant.Outlined">
+                <MudSelectItem Value="@("Draft")">Draft</MudSelectItem>
+                <MudSelectItem Value="@("Published")">Published</MudSelectItem>
+            </MudSelect>
+        </div>
+
+        <MudTable Items="Versions" Dense="true" Hover="true" Class="admin-table">
+            <HeaderContent>
+                <MudTh>Version</MudTh><MudTh>Name</MudTh><MudTh>Status</MudTh><MudTh>Published</MudTh><MudTh>Created</MudTh><MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.VersionNo</MudTd>
+                <MudTd>@context.VersionName</MudTd>
+                <MudTd>@context.Status</MudTd>
+                <MudTd>@(context.IsPublished ? "Yes" : "No")</MudTd>
+                <MudTd>@context.CreatedOn.ToLocalTime().ToString("dd-MMM-yyyy HH:mm")</MudTd>
+                <MudTd><MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => OpenVersion(context.VersionNo)">Open</MudButton></MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        <div class="json-editor-card">
+            <div class="json-toolbar">
+                <MudText Typo="Typo.h6">JSON Definition</MudText>
+                <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="FormatJson">Format JSON</MudButton>
+            </div>
+            <MudTextField @bind-Value="Json" Lines="22" FullWidth="true" Variant="Variant.Outlined" InputType="InputType.Text" />
+            <div class="json-actions">
+                <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="Save">Save New Version</MudButton>
+            </div>
+        </div>
+    </MudPaper>
+</div>
+
+@code {
+    private List<WorkflowDto> Workflows = [];
+    private List<VersionDto> Versions = [];
+    private string WorkflowCode = string.Empty;
+    private string VersionName = string.Empty;
+    private string Status = "Draft";
+    private string Json = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Workflows = await Api.GetWorkflowsAsync();
+        WorkflowCode = Workflows.FirstOrDefault()?.WorkflowCode ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(WorkflowCode)) await Load();
+    }
+
+    private async Task ChangeWorkflow(string value)
+    {
+        WorkflowCode = value;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        Versions = await Api.GetVersionsAsync(WorkflowCode);
+        var latest = Versions.FirstOrDefault();
+        if (latest is not null) await OpenVersion(latest.VersionNo);
+        else NewDraft();
+    }
+
+    private async Task OpenVersion(int versionNo)
+    {
+        var version = await Api.GetVersionAsync(WorkflowCode, versionNo);
+        if (version is null) return;
+        VersionName = version.VersionName;
+        Status = version.Status;
+        Json = version.JsonContent;
+        FormatJson();
+    }
+
+    private void NewDraft()
+    {
+        VersionName = $"{DateTime.Today:dd-MMM-yyyy} - Draft";
+        Status = "Draft";
+    }
+
+    private void FormatJson()
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(Json);
+            Json = System.Text.Json.JsonSerializer.Serialize(doc, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            Snackbar.Add("JSON is not valid.", Severity.Warning);
+        }
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            var array = System.Text.Json.JsonSerializer.Deserialize<List<WorkflowDefinitionDto>>(Json);
+            var definition = array?.FirstOrDefault();
+            if (definition is null) throw new InvalidOperationException("JSON must contain one workflow definition object.");
+            var result = await Api.SaveWorkflowDefinitionAsync(new SaveWorkflowDefinitionRequest
+            {
+                WorkflowCode = WorkflowCode,
+                VersionName = string.IsNullOrWhiteSpace(VersionName) ? $"{DateTime.Today:dd-MMM-yyyy} - Draft" : VersionName,
+                Status = Status,
+                IsPublished = Status == "Published",
+                Definition = definition
+            });
+            if (result is not null)
+            {
+                Versions = await Api.GetVersionsAsync(WorkflowCode);
+                Snackbar.Add($"Version {result.VersionNo} saved.", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"JSON could not be saved: {ex.Message}", Severity.Error);
+        }
+    }
+}

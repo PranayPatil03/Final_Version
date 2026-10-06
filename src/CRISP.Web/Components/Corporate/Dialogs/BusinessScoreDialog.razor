@@ -1,0 +1,738 @@
+@using System.Globalization
+
+@inject FrameworkApiClient Api
+
+<div class="score-modal">
+
+    <!-- ========================================================= -->
+    <!-- HEADER -->
+    <!-- ========================================================= -->
+
+    <div class="score-modal-title">
+        <span>@EntityName | @IndustryName</span>
+        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                       Size="Size.Small"
+                       Color="Color.Inherit"
+                       Class="score-modal-close"
+                       OnClick="CloseWithoutSaving" />
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- TABLE HEADER -->
+    <!-- ========================================================= -->
+
+    <div class="score-grid score-header">
+
+        <div>
+            Business Parameters
+        </div>
+
+        <div>
+        </div>
+
+        <div>
+            Weights (%)
+        </div>
+
+        <div>
+            Value
+        </div>
+
+        <div>
+            Score
+        </div>
+
+    </div>
+
+
+    <!-- ========================================================= -->
+    <!-- PARAMETERS -->
+    <!-- ========================================================= -->
+
+    @if (Parameters.Count == 0)
+    {
+        <div class="score-empty">
+            No business parameters are configured.
+        </div>
+    }
+    else
+    {
+        @foreach (var parameter in Parameters.OrderBy(x => x.DisplayOrder))
+        {
+            <div class="score-grid score-row">
+
+                <!-- Parameter Name -->
+                <div class="parameter-name">
+                    @parameter.ParameterName
+                </div>
+
+
+                <!-- Show Details -->
+                <div>
+
+                    <MudButton Size="Size.Small"
+                               Variant="Variant.Outlined"
+                               OnClick="@(() => Toggle(parameter.Id))">
+
+                        @(Expanded.Contains(parameter.Id)
+                            ? "Hide Details −"
+                            : "Show Details +")
+
+                    </MudButton>
+
+                </div>
+
+
+                <!-- Weight -->
+                <div>
+
+                    @GetWeight(parameter).ToString("0.##")%
+
+                </div>
+
+
+                <!-- Value -->
+                <div>
+
+                    @if (parameter.IsValueDriven)
+                    {
+                        <MudTextField T="decimal?"
+                                      Value="@GetValue(parameter.Id)"
+                                      ValueChanged="@((decimal? value) => SetValue(parameter, value))"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      FullWidth="true" />
+                    }
+                    else
+                    {
+                        <span class="manual-value-dash">
+                            -
+                        </span>
+                    }
+
+                </div>
+
+
+                <!-- Score -->
+                <div>
+
+                    @if (parameter.IsValueDriven)
+                    {
+                        <MudTextField T="int"
+                                      Value="@GetScore(parameter.Id)"
+                                      ReadOnly="true"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      FullWidth="true" />
+                    }
+                    else
+                    {
+                        <MudSelect T="int"
+                                   Value="@GetScore(parameter.Id)"
+                                   ValueChanged="@((int value) => SetScore(parameter.Id, value))"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true"
+                                   FullWidth="true">
+
+                            @foreach (var score in parameter.Scores.OrderBy(x => x.Score))
+                            {
+                                <MudSelectItem T="int"
+                                               Value="@score.Score">
+
+                                    @score.Score
+
+                                </MudSelectItem>
+                            }
+
+                        </MudSelect>
+                    }
+
+                </div>
+
+            </div>
+
+
+            <!-- ===================================================== -->
+            <!-- PARAMETER DETAILS -->
+            <!-- ===================================================== -->
+
+            @if (Expanded.Contains(parameter.Id))
+            {
+                <div class="parameter-detail-block">
+
+                    <div>
+                        <b>Parameter Name:</b>
+                        @parameter.ParameterName
+                    </div>
+
+
+                    @if (!string.IsNullOrWhiteSpace(parameter.WhyItMatters))
+                    {
+                        <div class="detail-label">
+                            Why It Matters?
+                        </div>
+
+                        <div>
+                            @((MarkupString)parameter.WhyItMatters)
+                        </div>
+                    }
+
+
+                    <div class="detail-label scoring-definition-label">
+                        Scoring Definition
+                    </div>
+
+                    <table class="score-definition-table">
+
+                        <thead>
+                            <tr>
+                                <th rowspan="2">Description</th>
+                                <th colspan="5">Score</th>
+                            </tr>
+                            <tr>
+                                @foreach (var score in parameter.Scores.OrderBy(x => x.Score))
+                                {
+                                    <th>@score.Score</th>
+                                }
+                            </tr>
+                        </thead>
+
+
+                        <tbody>
+
+                            <tr>
+
+                                <td>
+                                    Qualifying Criteria
+                                </td>
+
+                                @foreach (var score in parameter.Scores.OrderBy(x => x.Score))
+                                {
+                                    <td>
+                                        @score.Definition
+                                    </td>
+                                }
+
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                    @if (parameter.ParameterCode.Equals("MarketPositionScore", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <div class="score-definition-note">
+                            <b>Note:</b> *Market share to be computed by giving weightage to presence across the three key CV segments – M&amp;HCV (Trucks), LCV (Trucks) and Buses.
+                            <br />
+                            For example, if an OEM derives 60%, 30% and 10% of its volumes from the M&amp;HCV (Trucks), LCV (Trucks) and Bus segments respectively, and has market share of 50%, 20% and 20% in the respective segments, its weighted average market share would be 38%.
+                        </div>
+                    }
+
+                </div>
+            }
+
+        }
+    }
+
+
+    <!-- ========================================================= -->
+    <!-- TOTAL -->
+    <!-- ========================================================= -->
+
+    <div class="score-total-row">
+
+        <strong>
+            Weighted Average Score
+        </strong>
+
+        <span>
+        </span>
+
+        <strong>
+            @TotalWeight.ToString("0.##")%
+        </strong>
+
+        <span>
+        </span>
+
+        <strong>
+
+            @if (_calculating)
+            {
+                <MudProgressCircular Size="Size.Small"
+                                     Indeterminate="true"
+                                     Color="Color.Primary" />
+            }
+            else if (Evaluation is not null && Evaluation.Success)
+            {
+                @Evaluation.WeightedAverageScore.ToString("0.00")
+            }
+            else
+            {
+                <span>-</span>
+            }
+
+        </strong>
+
+    </div>
+
+
+    <!-- ========================================================= -->
+    <!-- ERROR -->
+    <!-- ========================================================= -->
+
+    @if (Evaluation is not null && !Evaluation.Success)
+    {
+        <div class="score-error-message">
+
+            <MudIcon Icon="@Icons.Material.Filled.ErrorOutline"
+                     Size="Size.Small" />
+
+            <span>
+                @Evaluation.Message
+            </span>
+
+        </div>
+    }
+
+
+    <!-- ========================================================= -->
+    <!-- ACTIONS -->
+    <!-- ========================================================= -->
+
+    <div class="score-modal-actions">
+
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Default"
+                   Disabled="_calculating"
+                   OnClick="CloseWithoutSaving">
+
+            Cancel
+
+        </MudButton>
+
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="_calculating"
+                   OnClick="SaveAndClose">
+
+            Save &amp; Close
+
+        </MudButton>
+
+    </div>
+
+</div>
+
+
+@code {
+
+    // =============================================================
+    // PARAMETERS
+    // =============================================================
+
+    [Parameter]
+    public string EntityName { get; set; } = string.Empty;
+
+
+    [Parameter]
+    public string IndustryName { get; set; } = string.Empty;
+
+
+    [Parameter]
+    public string WorkflowCode { get; set; } = string.Empty;
+
+
+    [Parameter]
+    public int VersionNo { get; set; }
+
+
+    [Parameter]
+    public IReadOnlyList<ParameterDto> Parameters { get; set; } = [];
+
+
+    [Parameter]
+    public IReadOnlyDictionary<int, decimal> InitialValues { get; set; }
+        = new Dictionary<int, decimal>();
+
+
+    [Parameter]
+    public IReadOnlyDictionary<int, int> InitialScores { get; set; }
+        = new Dictionary<int, int>();
+
+
+    [Parameter]
+    public IReadOnlyDictionary<string, decimal> VersionWeights { get; set; }
+        = new Dictionary<string, decimal>();
+
+
+    [Parameter]
+    public EventCallback<BusinessScoreDialogResult> OnSaved { get; set; }
+
+
+    [Parameter]
+    public EventCallback OnClosed { get; set; }
+
+
+    // =============================================================
+    // LOCAL STATE
+    // =============================================================
+
+    private readonly Dictionary<int, decimal?> Values = new();
+
+    private readonly Dictionary<int, int> Scores = new();
+
+    private readonly HashSet<int> Expanded = [];
+
+    private EvaluateResponse? Evaluation;
+
+    private bool _calculating;
+
+
+    // =============================================================
+    // INITIALIZATION
+    // =============================================================
+
+    protected override async Task OnInitializedAsync()
+    {
+        Values.Clear();
+        Scores.Clear();
+
+        foreach (var parameter in Parameters)
+        {
+            if (InitialValues.TryGetValue(
+                    parameter.Id,
+                    out var value))
+            {
+                Values[parameter.Id] = value;
+            }
+            else
+            {
+                Values[parameter.Id] = null;
+            }
+
+
+            if (InitialScores.TryGetValue(
+                    parameter.Id,
+                    out var score))
+            {
+                Scores[parameter.Id] = score;
+            }
+            else
+            {
+                Scores[parameter.Id] = 0;
+            }
+        }
+
+
+        /*
+         * IMPORTANT
+         *
+         * Calculate immediately when the dialog opens.
+         *
+         * This is what makes the Weighted Average Score
+         * appear immediately instead of showing "-".
+         */
+        await Calculate();
+    }
+
+
+    // =============================================================
+    // WEIGHT
+    // =============================================================
+
+    private decimal GetWeight(
+        ParameterDto parameter)
+    {
+        if (VersionWeights.TryGetValue(
+                parameter.ParameterCode,
+                out var weight))
+        {
+            return weight;
+        }
+
+        return parameter.Weight;
+    }
+
+
+    // =============================================================
+    // TOTAL WEIGHT
+    // =============================================================
+
+    private decimal TotalWeight
+    {
+        get
+        {
+            return Parameters.Sum(GetWeight);
+        }
+    }
+
+
+    // =============================================================
+    // VALUE
+    // =============================================================
+
+    private decimal? GetValue(int id)
+    {
+        return Values.TryGetValue(
+            id,
+            out var value)
+                ? value
+                : null;
+    }
+
+
+    // =============================================================
+    // SCORE
+    // =============================================================
+
+    private int GetScore(int id)
+    {
+        return Scores.TryGetValue(
+            id,
+            out var score)
+                ? score
+                : 0;
+    }
+
+
+    // =============================================================
+    // VALUE CHANGE
+    // =============================================================
+
+    private async Task SetValue(
+        ParameterDto parameter,
+        decimal? value)
+    {
+        Values[parameter.Id] = value;
+
+
+        /*
+         * Value-driven parameters:
+         *
+         * Value
+         *   ↓
+         * API
+         *   ↓
+         * ScoreDefinition
+         *   ↓
+         * Score
+         *
+         * No scoring logic is hardcoded in Razor.
+         */
+        if (value.HasValue)
+        {
+            try
+            {
+                var result =
+                    await Api.CalculateScoreAsync(
+                        new CalculateScoreRequest(
+                            parameter.Id,
+                            value));
+
+                Scores[parameter.Id] =
+                    result?.Score ?? 0;
+            }
+            catch (Exception ex)
+            {
+                SnackbarError(
+                    $"Unable to calculate score for {parameter.ParameterName}: {ex.Message}");
+
+                Scores[parameter.Id] = 0;
+            }
+        }
+        else
+        {
+            Scores[parameter.Id] = 0;
+        }
+
+
+        /*
+         * Recalculate weighted average
+         * through Rules Engine.
+         */
+        await Calculate();
+    }
+
+
+    // =============================================================
+    // MANUAL SCORE CHANGE
+    // =============================================================
+
+    private async Task SetScore(
+        int parameterId,
+        int score)
+    {
+        Scores[parameterId] = score;
+
+        await Calculate();
+    }
+
+
+    // =============================================================
+    // RULE ENGINE CALCULATION
+    // =============================================================
+
+    private async Task Calculate()
+    {
+        if (Parameters.Count == 0)
+        {
+            Evaluation = null;
+            return;
+        }
+
+
+        try
+        {
+            _calculating = true;
+
+            /*
+             * Value-driven parameters.
+             *
+             * Example:
+             *
+             * MarketPositionScore
+             * ScaleScore
+             */
+            var values =
+                Parameters
+                    .Where(x => x.IsValueDriven)
+                    .ToDictionary(
+                        x => x.ParameterCode,
+                        x => GetValue(x.Id));
+
+
+            /*
+             * Manual-score parameters.
+             *
+             * Example:
+             *
+             * ProductPortfolioScore
+             * GeographicDiversificationScore
+             */
+            var manualScores =
+                Parameters
+                    .Where(x => !x.IsValueDriven)
+                    .ToDictionary(
+                        x => x.ParameterCode,
+                        x => GetScore(x.Id));
+
+
+            /*
+             * Send everything to the API.
+             *
+             * The Web project does NOT calculate:
+             *
+             *     score × weight
+             *
+             * and does NOT calculate:
+             *
+             *     weighted average
+             *
+             * Those calculations are performed by the
+             * Rules Engine using the selected JSON version.
+             */
+            Evaluation =
+                await Api.EvaluateAsync(
+                    new EvaluateRequest(
+                        WorkflowCode,
+                        VersionNo,
+                        values,
+                        manualScores));
+        }
+        catch (Exception ex)
+        {
+            Evaluation =
+                new EvaluateResponse(
+                    false,
+                    0,
+                    VersionNo,
+                    string.Empty,
+                    ex.Message);
+        }
+        finally
+        {
+            _calculating = false;
+
+            await InvokeAsync(
+                StateHasChanged);
+        }
+    }
+
+
+    // =============================================================
+    // EXPAND / COLLAPSE DETAILS
+    // =============================================================
+
+    private void Toggle(int id)
+    {
+        if (!Expanded.Add(id))
+        {
+            Expanded.Remove(id);
+        }
+    }
+
+
+    // =============================================================
+    // SAVE
+    // =============================================================
+
+    private async Task SaveAndClose()
+    {
+        await Calculate();
+
+
+        if (Evaluation is null)
+        {
+            return;
+        }
+
+
+        if (!Evaluation.Success)
+        {
+            return;
+        }
+
+
+        var result =
+            Parameters.ToDictionary(
+                x => x.Id,
+                x =>
+                    new FrameworkParameterDto(
+                        x.Id,
+                        x.ParameterName,
+                        GetWeight(x),
+                        GetValue(x.Id),
+                        GetScore(x.Id)));
+
+
+        await OnSaved.InvokeAsync(
+            new BusinessScoreDialogResult(
+                result,
+                Evaluation));
+    }
+
+
+    // =============================================================
+    // CANCEL
+    // =============================================================
+
+    private async Task CloseWithoutSaving()
+    {
+        await OnClosed.InvokeAsync();
+    }
+
+
+    // =============================================================
+    // SIMPLE ERROR HELPER
+    // =============================================================
+
+    private void SnackbarError(
+        string message)
+    {
+        // Intentionally left without Snackbar dependency.
+        // The detailed evaluation error is displayed in the dialog.
+    }
+}

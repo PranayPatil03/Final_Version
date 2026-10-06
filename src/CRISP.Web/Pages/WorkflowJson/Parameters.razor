@@ -1,0 +1,119 @@
+@page "/workflow-json/parameters"
+@page "/parameters"
+@rendermode InteractiveServer
+@inject FrameworkApiClient Api
+@inject ISnackbar Snackbar
+
+<div class="admin-page">
+    <div class="crumb">Workflow JSON / Parameters</div>
+    <MudPaper Class="admin-card" Elevation="0">
+        <div class="admin-title-row">
+            <div>
+                <MudText Typo="Typo.h5">Parameters</MudText>
+                <MudText Typo="Typo.body2" Class="muted">Parameters are stored in the workflow JSON. Save creates a new draft version.</MudText>
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddParameter">Add Parameter</MudButton>
+        </div>
+
+        @if (Definition is null)
+        {
+            <MudProgressCircular Indeterminate="true" />
+        }
+        else
+        {
+            <MudTable Items="Definition.Parameters" Dense="true" Hover="true" Class="admin-table">
+                <HeaderContent><MudTh>Order</MudTh><MudTh>Code</MudTh><MudTh>Parameter Name</MudTh><MudTh>Weight %</MudTh><MudTh>Value Driven</MudTh><MudTh>Scores</MudTh><MudTh></MudTh></HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.DisplayOrder</MudTd>
+                    <MudTd>@context.ParameterCode</MudTd>
+                    <MudTd>@context.ParameterName</MudTd>
+                    <MudTd>@context.Weight</MudTd>
+                    <MudTd>@(context.IsValueDriven ? "Yes" : "No")</MudTd>
+                    <MudTd>@context.Scores.Count</MudTd>
+                    <MudTd><MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => EditParameter(context)">Edit</MudButton></MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            @if (Editing is not null)
+            {
+                <div class="editor-panel">
+                    <MudText Typo="Typo.h6">@(Editing.ParameterCode == "" ? "New Parameter" : "Edit Parameter")</MudText>
+                    <div class="admin-grid-2">
+                        <MudTextField @bind-Value="Editing.ParameterCode" Label="Parameter Code" Variant="Variant.Outlined" />
+                        <MudTextField @bind-Value="Editing.ParameterName" Label="Parameter Name" Variant="Variant.Outlined" />
+                        <MudNumericField T="decimal" @bind-Value="Editing.Weight" Label="Weight (%)" Variant="Variant.Outlined" />
+                        <MudNumericField T="int" @bind-Value="Editing.DisplayOrder" Label="Display Order" Variant="Variant.Outlined" />
+                    </div>
+                    <MudTextField @bind-Value="Editing.WhyItMatters" Label="Why It Matters" Lines="3" Variant="Variant.Outlined" Class="mt-3" />
+                    <MudTextField @bind-Value="Editing.HowDoWeMeasure" Label="How do we measure it?" Lines="3" Variant="Variant.Outlined" Class="mt-3" />
+                    <MudCheckBox @bind-Value="Editing.IsValueDriven">Value Driven</MudCheckBox>
+
+                    <div class="score-definition-editor">
+                        <div class="editor-subtitle">Scoring Definition</div>
+                        @foreach (var score in Editing.Scores.OrderBy(x => x.Score).ToList())
+                        {
+                            <div class="score-edit-row">
+                                <MudNumericField T="int" @bind-Value="@score.Score" Label="Score" Variant="Variant.Outlined" />
+                                <MudTextField @bind-Value="score.Definition" Label="Definition" Variant="Variant.Outlined" />
+                                <MudNumericField T="decimal?" @bind-Value="score.MinValue" Label="Min" Variant="Variant.Outlined" />
+                                <MudNumericField T="decimal?" @bind-Value="score.MaxValue" Label="Max" Variant="Variant.Outlined" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="() => Editing.Scores.Remove(score)" />
+                            </div>
+                        }
+                        <MudButton Variant="Variant.Outlined" OnClick="AddScore">Add Score</MudButton>
+                    </div>
+
+                    <div class="editor-actions">
+                        <MudButton Variant="Variant.Text" OnClick="CancelEdit">Cancel</MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="SaveParameter">Save as New JSON Version</MudButton>
+                    </div>
+                </div>
+            }
+        }
+    </MudPaper>
+</div>
+
+@code {
+    private string WorkflowCode = "CorporateBusiness";
+    private WorkflowDefinitionDto? Definition;
+    private WorkflowJsonParameterDto? Editing;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        Definition = await Api.GetWorkflowDefinitionAsync(WorkflowCode);
+    }
+
+    private void AddParameter()
+    {
+        Editing = new WorkflowJsonParameterDto { ParameterCode = "NewParameter", ParameterName = "New Parameter", DisplayOrder = (Definition?.Parameters.Count ?? 0) + 1, Weight = 0 };
+        Editing.Scores.Add(new WorkflowJsonScoreDto { Score = 1, Definition = "Define score 1" });
+    }
+
+    private void EditParameter(WorkflowJsonParameterDto parameter)
+    {
+        Editing = System.Text.Json.JsonSerializer.Deserialize<WorkflowJsonParameterDto>(System.Text.Json.JsonSerializer.Serialize(parameter));
+    }
+
+    private void AddScore() => Editing?.Scores.Add(new WorkflowJsonScoreDto { Score = (Editing.Scores.Count + 1), Definition = $"Define score {Editing.Scores.Count + 1}" });
+
+    private void CancelEdit() => Editing = null;
+
+    private async Task SaveParameter()
+    {
+        if (Definition is null || Editing is null) return;
+        var duplicate = Definition.Parameters.Any(x => x != Editing && x.ParameterCode.Equals(Editing.ParameterCode, StringComparison.OrdinalIgnoreCase));
+        if (duplicate) { Snackbar.Add("Parameter code already exists.", Severity.Warning); return; }
+        var existing = Definition.Parameters.FirstOrDefault(x => x.ParameterCode.Equals(Editing.ParameterCode, StringComparison.OrdinalIgnoreCase));
+        if (existing is null) Definition.Parameters.Add(Editing);
+        else
+        {
+            var index = Definition.Parameters.IndexOf(existing); Definition.Parameters[index] = Editing;
+        }
+        var result = await Api.SaveWorkflowDefinitionAsync(new SaveWorkflowDefinitionRequest
+        { WorkflowCode = WorkflowCode, VersionName = $"{DateTime.Today:dd-MMM-yyyy} - Draft", Status = "Draft", IsPublished = false, Definition = Definition });
+        if (result is not null) Snackbar.Add($"Parameter saved in version {result.VersionNo}.", Severity.Success);
+        Editing = null; await Load();
+    }
+}

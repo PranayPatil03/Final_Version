@@ -1,0 +1,5 @@
+{
+  "profiles": {
+    "CRISP.Web": { "commandName": "Project", "dotnetRunMessages": true, "launchBrowser": true, "applicationUrl": "http://localhost:4200", "environmentVariables": { "ASPNETCORE_ENVIRONMENT": "Development" } }
+  }
+}

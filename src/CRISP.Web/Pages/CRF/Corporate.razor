@@ -1,0 +1,822 @@
+@page "/crf/{RouteKey}"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject FrameworkApiClient Api
+@inject ISnackbar Snackbar
+
+<div class="crf-page">
+    @if (Loading)
+    {
+        <div class="crf-loading">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+        </div>
+    }
+    else
+    {
+        <div class="crumb">
+            Create/View Framework / @GetWorkflowDisplay()
+            @if (CurrentFramework is not null)
+            {
+                <span> - @CurrentFramework.EntityName @CurrentFramework.FrameworkDate.ToString("dd-MMM-yyyy") - @CurrentFramework.Status</span>
+            }
+        </div>
+
+        <div class="framework-toolbar">
+            <div class="steps">
+                @foreach (var step in Steps.OrderBy(x => x.DisplayOrder))
+                {
+                    <div class="step @(step.Id == ActiveStepId ? "active" : "")"
+                         @onclick="() => ActiveStepId = step.Id">
+                        <div class="step-circle">
+                            <MudIcon Icon="@GetStepIcon(step.DisplayOrder)" Size="Size.Small" />
+                        </div>
+                        <span>@step.StepName</span>
+                    </div>
+                }
+            </div>
+
+            <div class="toolbar-buttons">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Success"
+                           Disabled="!CanSave"
+                           OnClick="SaveDraft">
+                    Save Draft
+                </MudButton>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Disabled="!CanRun"
+                           OnClick="RunFramework">
+                    Run Framework
+                </MudButton>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Success"
+                           Disabled="!CanSubmit"
+                           OnClick="SubmitFramework">
+                    Submit
+                </MudButton>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(LookupError))
+        {
+            <MudAlert Severity="Severity.Error"
+                      Dense="true"
+                      Variant="Variant.Outlined"
+                      Class="lookup-error">
+                @LookupError
+            </MudAlert>
+        }
+
+        <div class="crf-form-row">
+            <div class="crf-field entity-search-field">
+                <label>Entity Name <span>*</span></label>
+
+                <div class="entity-lookup-wrap">
+                    <MudTextField T="string"
+                                  Value="EntitySearchText"
+                                  ValueChanged="OnEntitySearchChanged"
+                                  Placeholder="Search entity"
+                                  Variant="Variant.Text"
+                                  Margin="Margin.Dense"
+                                  Immediate="true"
+                                  Clearable="true"
+                                  OnClearButtonClick="ClearEntitySelection"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  @onfocus="OpenEntityLookup" />
+
+                    @if (EntityLookupOpen && EntitySearchResults.Count > 0)
+                    {
+                        <div class="entity-lookup-menu">
+                            @foreach (var entity in EntitySearchResults)
+                            {
+                                <button type="button"
+                                        class="entity-lookup-item"
+                                        @onclick="() => SelectEntity(entity)">
+                                    @entity.EntityName
+                                </button>
+                            }
+                        </div>
+                    }
+                    else if (EntityLookupOpen && EntitySearchText.Trim().Length >= 2 && EntitySearchResults.Count == 0)
+                    {
+                        <div class="entity-lookup-menu entity-lookup-empty">
+                            No entity found
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="crf-field framework-select-field">
+                <label>Create/View Framework <span>*</span></label>
+
+                <MudSelect T="string"
+                           Value="SelectedFrameworkKey"
+                           ValueChanged="OnFrameworkChanged"
+                           Variant="Variant.Text"
+                           Margin="Margin.Dense"
+                           Dense="true"
+                           Disabled="SelectedEntity is null || FrameworkLoading"
+                           Placeholder="@(FrameworkLoading ? "Loading frameworks..." : "Select Framework")">
+                    <MudSelectItem Value="@string.Empty">
+                        Select Framework
+                    </MudSelectItem>
+
+                    @if (!HasDraft)
+                    {
+                        <MudSelectItem Value="@("NEW")">
+                            Create New Framework
+                        </MudSelectItem>
+                    }
+
+                    @foreach (var item in FrameworkOptions)
+                    {
+                        <MudSelectItem Value="@($"FW:{item.Id}")">
+                            @item.DisplayName
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+            <div class="consolidated-box">
+                <MudCheckBox @bind-Value="ConsolidatedView"
+                             Color="Color.Primary"
+                             Disabled="CurrentFramework is null">
+                    Consolidated View
+                </MudCheckBox>
+                <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" />
+            </div>
+        </div>
+
+        <div class="industry-card">
+            <div class="industry-header">
+                <div>Select the industry segments in which the entity operates</div>
+                <div>Weight (%)</div>
+                <div>Action</div>
+                <div>Status</div>
+                <div>Add/Delete industry segment</div>
+            </div>
+
+            @if (CurrentFramework?.IndustrySegments.Count > 0)
+            {
+                @foreach (var segment in CurrentFramework.IndustrySegments)
+                {
+                    <div class="industry-row">
+                        <div class="industry-name">
+                            <span>@segment.IndustryName</span>
+                            <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                           Size="Size.Small"
+                                           Color="Color.Default"
+                                           Class="industry-remove"
+                                           Disabled="!CanSave"
+                                           OnClick="() => RemoveIndustrySegment(segment.Id)" />
+                        </div>
+
+                        <div class="industry-weight">
+                            @segment.Weight.ToString("0.##")
+                            <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" />
+                        </div>
+
+                        <div>
+                            <button type="button"
+                                    class="score-action-button"
+                                    disabled="@(!CanOpenScore(segment))"
+                                    @onclick="() => OpenScoreDialog(segment)">
+                                Edit/View Score
+                            </button>
+                        </div>
+
+                        <div class="industry-status">@segment.Status</div>
+
+                        <div class="industry-actions">
+                            <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                           Color="Color.Primary"
+                                           Disabled="!CanSave"
+                                           Class="industry-add"
+                                           OnClick="AddIndustrySegment" />
+                        </div>
+                    </div>
+                }
+            }
+            else if (IsNewFramework && SelectedEntity is not null)
+            {
+                <div class="industry-empty">
+                    <div class="empty-industry-select">
+                        <MudAutocomplete T="IndustrySegmentDto"
+                                         SearchFunc="SearchIndustrySegments"
+                                         ToStringFunc="@(x => x?.IndustryName ?? string.Empty)"
+                                         Placeholder="Select industry segment"
+                                         Variant="Variant.Text"
+                                         Margin="Margin.Dense"
+                                         ValueChanged="OnNewIndustrySelected" />
+                    </div>
+                    <div>-</div>
+                    <div>-</div>
+                    <div>-</div>
+                    <div>
+                        <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                       Color="Color.Primary"
+                                       Disabled="CurrentFramework?.IndustrySegments.Count == 0"
+                                       OnClick="AddIndustrySegment" />
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="industry-empty-readonly">
+                    Select an entity and framework to view industry segments.
+                </div>
+            }
+        </div>
+
+        @if (ScoreDialogOpen && ScoreDialogSegment is not null && CurrentFramework is not null)
+        {
+            <div class="score-dialog-backdrop" @onclick="CloseScoreDialog">
+                <div class="score-dialog-window" @onclick:stopPropagation="true">
+                    <BusinessScoreDialog
+                        EntityName="@CurrentFramework.EntityName"
+                        IndustryName="@ScoreDialogSegment.IndustryName"
+                        WorkflowCode="@WorkflowCode"
+                        VersionNo="@SelectedVersion"
+                        Parameters="@CurrentFramework.Parameters"
+                        InitialValues="@Values"
+                        InitialScores="@Scores"
+                        VersionWeights="@VersionWeights"
+                        OnSaved="HandleScoreDialogSaved"
+                        OnClosed="CloseScoreDialog" />
+                </div>
+            </div>
+        }
+
+        @if (Evaluation is not null)
+        {
+            <MudAlert Severity="@(Evaluation.Success ? Severity.Success : Severity.Error)"
+                      Class="crf-result">
+                @Evaluation.Message — Version @Evaluation.VersionNo — Weighted Average Score:
+                <b>@Evaluation.WeightedAverageScore.ToString("0.00")</b>
+            </MudAlert>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string RouteKey { get; set; } = "corporate";
+
+    private WorkflowDto? Workflow;
+    private FrameworkDto? CurrentFramework;
+    private EntityDto? SelectedEntity;
+
+    private List<EntityDto> EntitySearchResults = [];
+    private List<FrameworkLookupDto> FrameworkOptions = [];
+    private List<IndustrySegmentDto> IndustryOptions = [];
+    private List<FrameworkStepDto> Steps = [];
+
+    private string EntitySearchText = string.Empty;
+    private string WorkflowCode = "CorporateBusiness";
+    private string SelectedFrameworkKey = string.Empty;
+
+    private int SelectedVersion;
+    private int ActiveStepId;
+
+    private bool EntityLookupOpen;
+    private bool ConsolidatedView;
+    private bool Loading = true;
+    private bool FrameworkLoading;
+
+    private string? LookupError;
+    private EvaluateResponse? Evaluation;
+
+    private CancellationTokenSource? _entitySearchCts;
+    private bool _industryOptionsLoaded;
+    private Dictionary<string, decimal> VersionWeights = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<int, decimal> Values = new();
+    private Dictionary<int, int> Scores = new();
+    private bool ScoreDialogOpen;
+    private BusinessParameterDetailsDto? ScoreDialogSegment;
+
+    private bool IsNewFramework => SelectedFrameworkKey == "NEW";
+    private bool HasDraft => FrameworkOptions.Any(x => x.Status.Equals("Draft", StringComparison.OrdinalIgnoreCase));
+    private bool HasPersistedFramework => CurrentFramework?.Id > 0;
+    private bool CanSave => SelectedEntity is not null
+                             && CurrentFramework is not null
+                             && CurrentFramework.Status != "Submitted"
+                             && (IsNewFramework || HasPersistedFramework);
+    private bool CanRun => HasPersistedFramework && CurrentFramework?.IndustrySegments.Count > 0;
+    private bool CanSubmit => HasPersistedFramework
+                               && CurrentFramework?.Status.Equals("Draft", StringComparison.OrdinalIgnoreCase) == true;
+
+    private string GetWorkflowDisplay() => Workflow?.WorkflowName ?? "Corporate";
+
+    private static string GetStepIcon(int displayOrder)
+    {
+        return displayOrder switch
+        {
+            1 => Icons.Material.Filled.Settings,
+            2 => Icons.Material.Filled.Handshake,
+            3 => Icons.Material.Filled.MoreHoriz,
+            4 => Icons.Material.Filled.Groups,
+            5 => Icons.Material.Filled.Description,
+            6 => Icons.Material.Filled.Tune,
+            7 => Icons.Material.Filled.Subject,
+            8 => Icons.Material.Filled.Assessment,
+            _ => Icons.Material.Filled.Circle
+        };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            WorkflowCode = ResolveWorkflowCode(RouteKey);
+
+            var context = await Api.GetWorkflowContextAsync(WorkflowCode);
+            if (context is null)
+            {
+                LookupError = "Framework workflow configuration was not found.";
+                return;
+            }
+
+            Workflow = context.Workflow;
+            Steps = context.Steps.OrderBy(x => x.DisplayOrder).ToList();
+            ActiveStepId = Steps.FirstOrDefault()?.Id ?? 0;
+        }
+        catch (Exception ex)
+        {
+            LookupError = $"Framework configuration lookup failed: {ex.Message}";
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private static string ResolveWorkflowCode(string routeKey)
+    {
+        return routeKey.Equals("corporate", StringComparison.OrdinalIgnoreCase)
+            ? "CorporateBusiness"
+            : "CorporateBusiness";
+    }
+
+    private async Task OpenEntityLookup(FocusEventArgs _)
+    {
+        EntityLookupOpen = true;
+
+        if (EntitySearchText.Trim().Length < 2)
+        {
+            EntitySearchResults = [];
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task OnEntitySearchChanged(string? value)
+    {
+        EntitySearchText = value ?? string.Empty;
+        EntityLookupOpen = true;
+        LookupError = null;
+
+        _entitySearchCts?.Cancel();
+        _entitySearchCts?.Dispose();
+        _entitySearchCts = new CancellationTokenSource();
+        var token = _entitySearchCts.Token;
+
+        if (EntitySearchText.Trim().Length < 2)
+        {
+            EntitySearchResults = [];
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(180, token);
+            var result = await Api.SearchEntitiesAsync(EntitySearchText.Trim(), token);
+            EntitySearchResults = result.Take(20).ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            LookupError = $"Entity lookup failed: {ex.Message}";
+            EntitySearchResults = [];
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SelectEntity(EntityDto entity)
+    {
+        EntityLookupOpen = false;
+        EntitySearchText = entity.EntityName;
+        await OnEntityChanged(entity);
+    }
+
+    private async Task ClearEntitySelection(MouseEventArgs _)
+    {
+        EntitySearchText = string.Empty;
+        EntityLookupOpen = false;
+        await OnEntityChanged(null);
+    }
+
+    private async Task OnEntityChanged(EntityDto? entity)
+    {
+        SelectedEntity = entity;
+        CurrentFramework = null;
+        SelectedFrameworkKey = string.Empty;
+        FrameworkOptions = [];
+        Evaluation = null;
+        Values.Clear();
+        Scores.Clear();
+        VersionWeights.Clear();
+
+        if (entity is null)
+        {
+            FrameworkLoading = false;
+            return;
+        }
+
+        FrameworkLoading = true;
+        try
+        {
+            FrameworkOptions = (await Api.GetFrameworkOptionsAsync(entity.Id))
+                .OrderByDescending(x => x.FrameworkDate)
+                .ThenByDescending(x => x.Id)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            LookupError = $"Framework lookup failed: {ex.Message}";
+            Snackbar.Add(LookupError, Severity.Error);
+        }
+        finally
+        {
+            FrameworkLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task OnFrameworkChanged(string key)
+    {
+        SelectedFrameworkKey = key;
+        CurrentFramework = null;
+        Evaluation = null;
+        Values.Clear();
+        Scores.Clear();
+        VersionWeights.Clear();
+
+        if (string.IsNullOrWhiteSpace(key))
+            return;
+
+        if (key == "NEW")
+        {
+            if (HasDraft)
+            {
+                SelectedFrameworkKey = $"FW:{FrameworkOptions.First(x => x.Status.Equals("Draft", StringComparison.OrdinalIgnoreCase)).Id}";
+                await LoadFramework(int.Parse(SelectedFrameworkKey[3..]));
+                return;
+            }
+
+            await EnsureIndustryOptionsAsync();
+            var parameters = await Api.GetParametersAsync(WorkflowCode);
+            SelectedVersion = parameters.Count > 0
+                ? (await Api.GetVersionsAsync(WorkflowCode)).FirstOrDefault(x => x.IsPublished)?.VersionNo ?? 1
+                : 1;
+
+            CurrentFramework = new FrameworkDto
+            {
+                EntityId = SelectedEntity!.Id,
+                WorkflowCode = WorkflowCode,
+                EntityName = SelectedEntity.EntityName,
+                FrameworkName = $"{DateTime.Today:dd-MMM-yyyy} - Draft",
+                Status = "Draft",
+                WorkflowVersionNo = SelectedVersion,
+                FrameworkDate = DateTime.Today,
+                ConsolidatedView = false,
+                Steps = Steps.ToList(),
+                IndustrySegments = [],
+                Parameters = parameters.ToList()
+            };
+
+            ConsolidatedView = false;
+            return;
+        }
+
+        if (key.StartsWith("FW:", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(key[3..], out var id))
+        {
+            await LoadFramework(id);
+        }
+    }
+
+    private async Task LoadFramework(int id)
+    {
+        FrameworkLoading = true;
+        try
+        {
+            CurrentFramework = await Api.GetFrameworkAsync(id);
+            if (CurrentFramework is null)
+            {
+                LookupError = "Selected framework could not be loaded.";
+                return;
+            }
+
+            SelectedEntity = new EntityDto(CurrentFramework.EntityId, CurrentFramework.EntityName);
+            SelectedVersion = CurrentFramework.WorkflowVersionNo;
+            ConsolidatedView = CurrentFramework.ConsolidatedView;
+            Steps = CurrentFramework.Steps.OrderBy(x => x.DisplayOrder).ToList();
+            ActiveStepId = Steps.FirstOrDefault()?.Id ?? 0;
+
+            foreach (var parameterValue in CurrentFramework.ParameterValues)
+            {
+                if (parameterValue.Value.HasValue)
+                    Values[parameterValue.ParameterId] = parameterValue.Value.Value;
+
+                Scores[parameterValue.ParameterId] = parameterValue.Score;
+            }
+
+            // Parameters are returned with the framework. Do not make another API call here.
+            // Version JSON is loaded only when score evaluation is required.
+        }
+        catch (Exception ex)
+        {
+            LookupError = $"Framework could not be loaded: {ex.Message}";
+            Snackbar.Add(LookupError, Severity.Error);
+        }
+        finally
+        {
+            FrameworkLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task EnsureIndustryOptionsAsync()
+    {
+        if (_industryOptionsLoaded)
+            return;
+
+        IndustryOptions = (await Api.GetIndustrySegmentsAsync(WorkflowCode))
+            .OrderBy(x => x.IndustryName)
+            .ToList();
+        _industryOptionsLoaded = true;
+    }
+
+    private async Task<IEnumerable<IndustrySegmentDto>> SearchIndustrySegments(string value, CancellationToken ct)
+    {
+        await EnsureIndustryOptionsAsync();
+        return IndustryOptions.Where(x => string.IsNullOrWhiteSpace(value)
+            || x.IndustryName.Contains(value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void OnNewIndustrySelected(IndustrySegmentDto? selected)
+    {
+        if (selected is null || CurrentFramework is null || !IsNewFramework)
+            return;
+
+        CurrentFramework.IndustryName = selected.IndustryName;
+        CurrentFramework.IndustrySegments =
+        [
+            new BusinessParameterDetailsDto(
+                0,
+                selected.Id,
+                selected.IndustryName,
+                100,
+                "Saved")
+        ];
+    }
+
+    private bool CanOpenScore(BusinessParameterDetailsDto segment)
+    {
+        return CurrentFramework is not null
+               && !string.IsNullOrWhiteSpace(segment.IndustryName);
+    }
+
+    private void AddIndustrySegment()
+    {
+        if (CurrentFramework is null || !CanSave || IndustryOptions.Count == 0)
+            return;
+
+        var available = IndustryOptions.FirstOrDefault(x =>
+            CurrentFramework.IndustrySegments.All(s => s.IndustrySegmentId != x.Id));
+
+        if (available is null)
+            return;
+
+        var count = CurrentFramework.IndustrySegments.Count + 1;
+        var weight = Math.Round(100m / count, 2);
+
+        CurrentFramework.IndustrySegments = CurrentFramework.IndustrySegments
+            .Select(x => new BusinessParameterDetailsDto(x.Id, x.IndustrySegmentId, x.IndustryName, weight, x.Status))
+            .Append(new BusinessParameterDetailsDto(0, available.Id, available.IndustryName, weight, "Saved"))
+            .ToList();
+
+        CurrentFramework.IndustryName = CurrentFramework.IndustrySegments.First().IndustryName;
+    }
+
+    private void RemoveIndustrySegment(int id)
+    {
+        if (CurrentFramework is null || !CanSave)
+            return;
+
+        var remaining = CurrentFramework.IndustrySegments.Where(x => x.Id != id).ToList();
+        if (remaining.Count == 0)
+        {
+            CurrentFramework.IndustryName = string.Empty;
+            CurrentFramework.IndustrySegments = [];
+            return;
+        }
+
+        var weight = Math.Round(100m / remaining.Count, 2);
+        CurrentFramework.IndustryName = remaining.First().IndustryName;
+        CurrentFramework.IndustrySegments = remaining
+            .Select(x => new BusinessParameterDetailsDto(x.Id, x.IndustrySegmentId, x.IndustryName, weight, x.Status))
+            .ToList();
+    }
+
+    private async Task LoadVersionWeightsAsync()
+    {
+        if (VersionWeights.Count > 0 || string.IsNullOrWhiteSpace(WorkflowCode) || SelectedVersion <= 0)
+            return;
+
+        var version = await Api.GetVersionAsync(WorkflowCode, SelectedVersion);
+        if (version is null)
+            return;
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(version.JsonContent);
+            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array
+                || document.RootElement.GetArrayLength() == 0
+                || !document.RootElement[0].TryGetProperty("Weights", out var weights))
+                return;
+
+            foreach (var property in weights.EnumerateObject())
+            {
+                if (property.Value.TryGetDecimal(out var weight))
+                    VersionWeights[property.Name] = weight;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // The relational parameter weight remains the fallback.
+        }
+    }
+
+    private async Task OpenScoreDialog(BusinessParameterDetailsDto segment)
+    {
+        if (!CanOpenScore(segment) || CurrentFramework is null)
+            return;
+
+        try
+        {
+            if (CurrentFramework.Parameters.Count == 0)
+            {
+                CurrentFramework.Parameters =
+                    (await Api.GetParametersAsync(WorkflowCode)).ToList();
+            }
+
+            try
+            {
+                await LoadVersionWeightsAsync();
+            }
+            catch (Exception ex)
+            {
+                VersionWeights.Clear();
+                Snackbar.Add(
+                    $"Version weights could not be loaded. Default parameter weights will be used. {ex.Message}",
+                    Severity.Warning);
+            }
+
+            if (CurrentFramework.Parameters.Count == 0)
+            {
+                Snackbar.Add(
+                    "No business parameters are configured for the selected workflow.",
+                    Severity.Warning);
+                return;
+            }
+
+            ScoreDialogSegment = segment;
+            ScoreDialogOpen = true;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                $"Unable to open Business Score dialog: {ex.Message}",
+                Severity.Error);
+        }
+    }
+
+    private async Task HandleScoreDialogSaved(BusinessScoreDialogResult data)
+    {
+        foreach (var item in data.Parameters.Values)
+        {
+            if (item.Value.HasValue)
+                Values[item.ParameterId] = item.Value.Value;
+
+            Scores[item.ParameterId] = item.Score;
+        }
+
+        Evaluation = data.Evaluation;
+        ScoreDialogOpen = false;
+        ScoreDialogSegment = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CloseScoreDialog()
+    {
+        ScoreDialogOpen = false;
+        ScoreDialogSegment = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveDraft()
+    {
+        if (CurrentFramework is null || SelectedEntity is null)
+            return;
+
+        if (CurrentFramework.IndustrySegments.Count == 0)
+        {
+            Snackbar.Add("Select at least one industry segment.", Severity.Warning);
+            return;
+        }
+
+        CurrentFramework.EntityId = SelectedEntity.Id;
+        CurrentFramework.EntityName = SelectedEntity.EntityName;
+        CurrentFramework.ConsolidatedView = ConsolidatedView;
+        CurrentFramework.Status = "Draft";
+        CurrentFramework.WorkflowVersionNo = SelectedVersion;
+        CurrentFramework.ParameterValues = CurrentFramework.Parameters
+            .Select(p => new FrameworkParameterDto(
+                p.Id,
+                p.ParameterName,
+                VersionWeights.TryGetValue(p.ParameterCode, out var weight) ? weight : p.Weight,
+                Values.TryGetValue(p.Id, out var value) ? value : null,
+                Scores.TryGetValue(p.Id, out var score) ? score : 0))
+            .ToList();
+
+        CurrentFramework = await Api.SaveFrameworkAsync(CurrentFramework);
+        SelectedFrameworkKey = $"FW:{CurrentFramework.Id}";
+        FrameworkOptions = (await Api.GetFrameworkOptionsAsync(SelectedEntity.Id))
+            .OrderByDescending(x => x.FrameworkDate)
+            .ThenByDescending(x => x.Id)
+            .ToList();
+
+        Snackbar.Add("Framework draft saved.", Severity.Success);
+    }
+
+    private async Task RunFramework()
+    {
+        if (CurrentFramework is null)
+            return;
+
+        if (CurrentFramework.Id == 0)
+        {
+            await SaveDraft();
+            if (CurrentFramework.Id == 0)
+                return;
+        }
+
+        await LoadVersionWeightsAsync();
+
+        var values = CurrentFramework.Parameters
+            .Where(p => p.IsValueDriven)
+            .ToDictionary(
+                p => p.ParameterCode,
+                p => Values.TryGetValue(p.Id, out var value) ? (decimal?)value : null,
+                StringComparer.OrdinalIgnoreCase);
+
+        var manualScores = CurrentFramework.Parameters
+            .Where(p => !p.IsValueDriven)
+            .ToDictionary(
+                p => p.ParameterCode,
+                p => Scores.TryGetValue(p.Id, out var score) ? score : 0,
+                StringComparer.OrdinalIgnoreCase);
+
+        Evaluation = await Api.EvaluateAsync(
+            new EvaluateRequest(WorkflowCode, SelectedVersion, values, manualScores));
+    }
+
+    private async Task SubmitFramework()
+    {
+        if (CurrentFramework is null)
+            return;
+
+        await SaveDraft();
+        if (CurrentFramework is null || CurrentFramework.Id == 0)
+            return;
+
+        CurrentFramework.Status = "Submitted";
+        CurrentFramework = await Api.SaveFrameworkAsync(CurrentFramework);
+        Snackbar.Add("Framework submitted.", Severity.Success);
+    }
+
+    public void Dispose()
+    {
+        _entitySearchCts?.Cancel();
+        _entitySearchCts?.Dispose();
+    }
+}

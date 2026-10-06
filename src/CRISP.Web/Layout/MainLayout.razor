@@ -1,0 +1,100 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="@Theme" IsDarkMode="false" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudPopoverProvider />
+
+<div class="icra-shell">
+    <aside class="icra-sidebar">
+        <div class="icra-brand">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                           Size="Size.Small"
+                           Color="Color.Default"
+                           Class="icra-menu-button" />
+            <img src="images/icra-logo-reference.png" alt="ICRA" class="icra-logo-image" />
+        </div>
+
+        <nav class="icra-nav">
+            <div class="nav-section">
+                <span>Financial Information</span>
+                <MudIcon Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small" />
+            </div>
+
+            <div class="nav-section open">
+                <span>Credit Rating Framework</span>
+                <MudIcon Icon="@Icons.Material.Filled.KeyboardArrowUp" Size="Size.Small" />
+            </div>
+
+            <div class="nav-link nav-parent nav-toggle" @onclick="() => AdminOpen = !AdminOpen">
+                <MudIcon Icon="@Icons.Material.Filled.Security" />
+                <span>Admin</span>
+                <MudIcon Class="nav-end" Icon="@(AdminOpen ? Icons.Material.Filled.KeyboardArrowUp : Icons.Material.Filled.KeyboardArrowDown)" Size="Size.Small" />
+            </div>
+
+            @if (AdminOpen)
+            {
+                <NavLink href="/workflow-json" class="nav-child">› Workflow JSON</NavLink>
+                <NavLink href="/workflow-json/parameters" class="nav-child">› Parameters</NavLink>
+                <NavLink href="/workflow-json/rules" class="nav-child">› Rules</NavLink>
+                <NavLink href="/workflow-json/evaluate" class="nav-child">› Evaluate</NavLink>
+            }
+
+            <div class="nav-link nav-parent">
+                <MudIcon Icon="@Icons.Material.Filled.FolderOpen" />
+                <span>Create/View Framework</span>
+                <MudIcon Class="nav-end" Icon="@Icons.Material.Filled.KeyboardArrowUp" Size="Size.Small" />
+            </div>
+            <NavLink href="/crf/corporate" class="nav-child">› Corporate</NavLink>
+            <NavLink href="/crf/financial" class="nav-child">› Financial</NavLink>
+            <NavLink href="/crf/investment-company" class="nav-child">› Investment Company</NavLink>
+            <NavLink href="/crf/public-finance" class="nav-child">› Public Finance</NavLink>
+
+            <div class="nav-link">
+                <MudIcon Icon="@Icons.Material.Filled.ShowChart" />
+                <span>Report Generation</span>
+                <MudIcon Class="nav-end" Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small" />
+            </div>
+
+            <div class="nav-link">
+                <MudIcon Icon="@Icons.Material.Filled.Schedule" />
+                <span>Rating Tracker</span>
+                <MudIcon Class="nav-end" Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small" />
+            </div>
+        </nav>
+    </aside>
+
+    <main class="icra-main">
+        <header class="icra-topbar">
+            <div class="top-spacer"></div>
+            <MudIconButton Icon="@Icons.Material.Filled.AccountCircle"
+                           Color="Color.Default"
+                           Class="user-avatar" />
+            <MudIcon Icon="@Icons.Material.Filled.KeyboardArrowDown"
+                      Size="Size.Small"
+                      Class="user-arrow" />
+            <span class="user-name">Pranay Patil</span>
+        </header>
+
+        <section class="icra-content">
+            @Body
+        </section>
+
+        <footer class="icra-footer">
+            Copyright © 2026 ICRA Limited. All Rights Reserved
+        </footer>
+    </main>
+</div>
+
+@code {
+    private bool AdminOpen;
+
+    private MudTheme Theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#174ea6",
+            Secondary = "#174ea6"
+        }
+    };
+}

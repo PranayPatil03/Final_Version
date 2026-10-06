@@ -1,0 +1,22 @@
+[
+  {
+    "WorkflowName": "CorporateBusiness",
+    "GlobalParams": [{ "Name": "Version", "Expression": "1" }],
+    "Rules": [
+      {
+        "RuleName": "CalculateWeightedAverage",
+        "SuccessEvent": "Calculated",
+        "Expression": "true",
+        "RuleExpressionType": "LambdaExpression",
+        "Actions": {
+          "OnSuccess": {
+            "Name": "OutputExpression",
+            "Context": {
+              "Expression": "(input1.MarketPositionScore * 15 + input1.ScaleScore * 15 + input1.ProductPortfolioScore * 25 + input1.GeographicDiversificationScore * 25 + input1.TechnologyScore * 20) / 100.0"
+            }
+          }
+        }
+      }
+    ]
+  }
+]

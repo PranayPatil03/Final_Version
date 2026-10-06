@@ -1,0 +1,30 @@
+@page "/"
+@page "/home"
+
+<PageTitle>CRISP - Welcome</PageTitle>
+
+<div class="crisp-welcome-page">
+    <MudPaper Class="crisp-welcome-card" Elevation="0">
+        <MudText Typo="Typo.h4" Class="crisp-welcome-title">Welcome To</MudText>
+        <MudText Typo="Typo.h2" Class="crisp-welcome-brand">CRISP</MudText>
+        <MudText Typo="Typo.body2" Class="crisp-welcome-subtitle">
+            (Credit Rating Information and Solution Platform)
+        </MudText>
+
+        <div class="crisp-welcome-actions">
+            <MudButton Href="/financial-information"
+                       Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Class="crisp-welcome-button">
+                Financial Information
+            </MudButton>
+
+            <MudButton Href="/crf/corporate"
+                       Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Class="crisp-welcome-button">
+                Credit Rating Framework
+            </MudButton>
+        </div>
+    </MudPaper>
+</div>

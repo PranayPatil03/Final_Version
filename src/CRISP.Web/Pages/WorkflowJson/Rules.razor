@@ -1,0 +1,68 @@
+@page "/workflow-json/rules"
+@page "/rules"
+@rendermode InteractiveServer
+@inject FrameworkApiClient Api
+@inject ISnackbar Snackbar
+
+<div class="admin-page">
+    <div class="crumb">Workflow JSON / Rules</div>
+    <MudPaper Class="admin-card" Elevation="0">
+        <div class="admin-title-row">
+            <div>
+                <MudText Typo="Typo.h5">Rules</MudText>
+                <MudText Typo="Typo.body2" Class="muted">Rules are stored in JSON and executed by the Rules Engine. No calculation is hardcoded in the UI.</MudText>
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddRule">Add Rule</MudButton>
+        </div>
+
+        @if (Definition is not null)
+        {
+            <MudTable Items="Definition.Rules" Dense="true" Hover="true" Class="admin-table">
+                <HeaderContent><MudTh>Rule</MudTh><MudTh>Condition</MudTh><MudTh>Output Expression</MudTh><MudTh></MudTh></HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.RuleName</MudTd><MudTd><code>@context.Expression</code></MudTd><MudTd><code>@context.OutputExpression</code></MudTd>
+                    <MudTd><MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => EditRule(context)">Edit</MudButton></MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            @if (Editing is not null)
+            {
+                <div class="editor-panel">
+                    <MudText Typo="Typo.h6">Rule Definition</MudText>
+                    <MudTextField @bind-Value="Editing.RuleName" Label="Rule Name" Variant="Variant.Outlined" />
+                    <MudTextField @bind-Value="Editing.Expression" Label="Condition Expression" Variant="Variant.Outlined" Class="mt-3" />
+                    <MudTextField @bind-Value="Editing.OutputExpression" Label="Output Expression" Lines="4" Variant="Variant.Outlined" Class="mt-3" />
+                    <MudText Typo="Typo.caption" Class="muted mt-2">Example: (input1.MarketPositionScore * 15 + input1.ScaleScore * 15) / 30.0</MudText>
+                    <div class="editor-actions">
+                        <MudButton Variant="Variant.Text" OnClick="CancelEdit">Cancel</MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="SaveRule">Save as New JSON Version</MudButton>
+                    </div>
+                </div>
+            }
+        }
+    </MudPaper>
+</div>
+
+@code {
+    private string WorkflowCode = "CorporateBusiness";
+    private WorkflowDefinitionDto? Definition;
+    private WorkflowJsonRuleDto? Editing;
+
+    protected override async Task OnInitializedAsync() => await Load();
+    private async Task Load() => Definition = await Api.GetWorkflowDefinitionAsync(WorkflowCode);
+    private void AddRule() => Editing = new WorkflowJsonRuleDto { RuleName = "NewRule", Expression = "true", OutputExpression = "0" };
+    private void EditRule(WorkflowJsonRuleDto rule) => Editing = System.Text.Json.JsonSerializer.Deserialize<WorkflowJsonRuleDto>(System.Text.Json.JsonSerializer.Serialize(rule));
+    private void CancelEdit() => Editing = null;
+
+    private async Task SaveRule()
+    {
+        if (Definition is null || Editing is null) return;
+        var existing = Definition.Rules.FirstOrDefault(x => x.RuleName.Equals(Editing.RuleName, StringComparison.OrdinalIgnoreCase));
+        if (existing is null) Definition.Rules.Add(Editing);
+        else Definition.Rules[Definition.Rules.IndexOf(existing)] = Editing;
+        var result = await Api.SaveWorkflowDefinitionAsync(new SaveWorkflowDefinitionRequest
+        { WorkflowCode = WorkflowCode, VersionName = $"{DateTime.Today:dd-MMM-yyyy} - Draft", Status = "Draft", IsPublished = false, Definition = Definition });
+        if (result is not null) Snackbar.Add($"Rule saved in version {result.VersionNo}.", Severity.Success);
+        Editing = null; await Load();
+    }
+}

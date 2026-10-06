@@ -1,0 +1,95 @@
+﻿// Copyright (c) Microsoft Corporation.
+//  Licensed under the MIT License.
+
+using RulesEngine.Models;
+using System;
+using System.Collections.Generic;
+
+namespace RulesEngine.Actions
+{
+    using System.Text.Json;
+
+    public class ActionContext
+    {
+        private readonly IDictionary<string, string> _context;
+        private readonly RuleResultTree _parentResult;
+
+        public ActionContext(IDictionary<string, object> context, RuleResultTree parentResult)
+        {
+            _context = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (context != null)
+            {
+                foreach (var kv in context)
+                {
+                    string key = kv.Key;
+                    string value;
+                    if (kv.Value == null)
+                    {
+                        value = null;
+                    }
+                    else
+                    {
+                        switch (kv.Value.GetType().Name)
+                        {
+                            case "String":
+                            case "JsonElement":
+                                value = kv.Value.ToString();
+                                break;
+                            default:
+                                value = JsonSerializer.Serialize(kv.Value);
+                                break;
+                        }
+                    }
+                    _context.Add(key, value);
+                }
+            }
+            _parentResult = parentResult;
+        }
+
+        public RuleResultTree GetParentRuleResult()
+        {
+            return _parentResult;
+        }
+
+        public bool TryGetContext<T>(string name,out T output)
+        {
+            try
+            {
+                //key not found return
+                //Returning a KeyNotFoundException has a significant impact on performance.
+                if (!_context.ContainsKey(name))
+                {
+                    output = default(T);
+                    return false;
+                }
+                output =  GetContext<T>(name);
+                return true;
+            }
+            catch(ArgumentException)
+            {
+                output = default(T);
+                return false;
+            }
+        }
+
+        public T GetContext<T>(string name)
+        {
+            try
+            {
+                if (typeof(T) == typeof(string))
+                {
+                    return (T)Convert.ChangeType(_context[name], typeof(T));
+                }
+                return JsonSerializer.Deserialize<T>(_context[name]);
+            }
+            catch (KeyNotFoundException)
+            {
+                throw new ArgumentException($"Argument `{name}` was not found in the action context");
+            }
+            catch (JsonException)
+            {
+                throw new ArgumentException($"Failed to convert argument `{name}` to type `{typeof(T).Name}` in the action context");
+            }
+        }
+    }
+}
